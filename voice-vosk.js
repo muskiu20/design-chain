@@ -22,11 +22,20 @@
  * own fetch, so it goes via the service worker's cache (works offline
  * afterwards) and reports progress. It's handed to Vosk as a blob URL.
  *
- * Recognition is restricted to the game's own vocabulary (every word of
- * every non-AI term, plus "[unk]" for anything else): far more accurate for
- * a word game than free dictation, which turned "line" into "elaine".
- * URL flags for debugging: ?vosk=plain (free dictation), ?vosk=off (use
- * the browser recognizer only).
+ * Two recognizers run over the same audio (see connectPipeline()). The
+ * primary is grammar-restricted to the game's own vocabulary (every word
+ * of every term, AI-category included, plus "[unk]" for anything else):
+ * far more accurate for a word game than free dictation, which turned
+ * "line" into "elaine" — but a closed grammar can only ever recognize a
+ * word that's actually in it, so a common English word outside the
+ * dataset ("diffusion" was reported never detected) was silently dropped.
+ * The secondary recognizer has no grammar at all — the model's complete
+ * lexicon, a "general dictionary" — and its result is only ever offered
+ * as an extra alternative transcript (ui.js's handleVoiceResult() already
+ * tries every alternative), never shown in the live letter-slot preview.
+ * URL flags for debugging: ?vosk=plain (primary uses free dictation too,
+ * so no secondary recognizer runs), ?vosk=off (use the browser recognizer
+ * only).
  *
  * Self-check: iOS can leave a freshly connected audio graph silently dead,
  * so each connection is watched and rebuilt if no audio arrives — see
@@ -63,6 +72,7 @@
   let processorNode = null;
   let muteNode = null;
   let recognizer = null;
+  let secondaryRecognizer = null; // open-vocabulary fallback — see connectPipeline()
   let listening = false; // we intend to be listening
   let isListeningNow = false; // audio is actually flowing into the recognizer
   let sessionId = 0;
@@ -178,17 +188,21 @@
     return modelPromise;
   }
 
-  // The game's vocabulary (see the header).
+  // The game's vocabulary (see the header). Every term's words go in, even
+  // AI-category ones that are never actually asked (EXCLUDED_TERMS in
+  // game.js keeps them out of play) — a player can still say one (e.g. a
+  // round whose answer happens to also be a word from an AI term, or just
+  // speaking a word they can see isn't being accepted), and there's no
+  // reason the grammar should refuse to even recognize it correctly just
+  // because that particular term can't be the current round's target.
   function buildGrammar() {
     const words = new Set();
-    (typeof DESIGN_TERMS !== "undefined" ? DESIGN_TERMS : [])
-      .filter((term) => term.category !== "AI")
-      .forEach((term) => {
-        [term.first, term.second, ...term.term.split(/\s+/)].forEach((word) => {
-          const clean = String(word || "").toLowerCase().replace(/[^a-z']/g, "");
-          if (clean) words.add(clean);
-        });
+    (typeof DESIGN_TERMS !== "undefined" ? DESIGN_TERMS : []).forEach((term) => {
+      [term.first, term.second, ...term.term.split(/\s+/)].forEach((word) => {
+        const clean = String(word || "").toLowerCase().replace(/[^a-z']/g, "");
+        if (clean) words.add(clean);
       });
+    });
     return JSON.stringify([...words, "[unk]"]);
   }
 
@@ -233,6 +247,14 @@
         /* already gone */
       }
       recognizer = null;
+    }
+    if (secondaryRecognizer) {
+      try {
+        secondaryRecognizer.remove();
+      } catch {
+        /* already gone */
+      }
+      secondaryRecognizer = null;
     }
   }
 
@@ -281,11 +303,47 @@
         emit(interimCallbacks, partial.trim());
       }
     });
+
+    // A second recognizer over the SAME audio, with no grammar — the
+    // model's full lexicon instead of just the game's vocabulary. The
+    // grammar above is the most accurate option for the game's own words
+    // ("line" is never misheard once the vocabulary is tiny), but it can
+    // only ever recognize words in that list: anything else, including an
+    // entirely common English word, is silently dropped. This recognizer
+    // can say anything the model knows at all. Its result is only ever
+    // offered as an EXTRA alternative (see the "result" handler below) —
+    // ui.js's handleVoiceResult() already tries every alternative against
+    // the current round's answer, so this is a pure addition, never a
+    // replacement, and never shown in the live letter-slot preview (which
+    // stays sourced from the grammar recognizer's interim text only, so
+    // the preview doesn't flicker between two independently-timed partials).
+    // Only worth running when the primary actually has a grammar — with
+    // ?vosk=plain the primary already has none, so a second one would just
+    // double the CPU cost for an identical result.
+    let latestSecondaryResult = "";
+    if (USE_GRAMMAR) {
+      try {
+        secondaryRecognizer = new model.KaldiRecognizer(audioContext.sampleRate);
+        secondaryRecognizer.on("result", (message) => {
+          const text = message && message.result ? message.result.text : "";
+          if (text && text.trim()) latestSecondaryResult = text.trim();
+        });
+      } catch (err) {
+        // Non-fatal: the grammar recognizer above still works on its own,
+        // just without the general-dictionary fallback this round.
+        emitDebugEvent("vosk-audio", `secondary recognizer failed: ${(err && err.message) || err}`);
+        secondaryRecognizer = null;
+      }
+    }
+
     recognizer.on("result", (message) => {
       const text = message && message.result ? message.result.text : "";
       if (text && text.trim()) {
-        emitDebugEvent("result", text.trim());
-        emit(resultCallbacks, text.trim(), [text.trim()]);
+        const alternatives = [text.trim()];
+        if (latestSecondaryResult && latestSecondaryResult !== text.trim()) alternatives.push(latestSecondaryResult);
+        latestSecondaryResult = "";
+        emitDebugEvent("result", alternatives.length > 1 ? `${alternatives[0]}  (general dictionary: ${alternatives[1]})` : alternatives[0]);
+        emit(resultCallbacks, alternatives[0], alternatives);
       }
     });
 
@@ -308,6 +366,23 @@
         recognizer.acceptWaveform(event.inputBuffer);
       } catch (err) {
         console.error("VoiceVosk: acceptWaveform failed", err);
+      }
+      // Kept separate from the primary's try/catch above: a failure here
+      // should drop the general-dictionary fallback for the rest of this
+      // session (one error log, not one per audio buffer), never the
+      // primary recognizer's own matching.
+      if (secondaryRecognizer) {
+        try {
+          secondaryRecognizer.acceptWaveform(event.inputBuffer);
+        } catch (err) {
+          console.error("VoiceVosk: secondary acceptWaveform failed, disabling it for this session", err);
+          try {
+            secondaryRecognizer.remove();
+          } catch {
+            /* already gone */
+          }
+          secondaryRecognizer = null;
+        }
       }
     };
     sourceNode.connect(processorNode);
