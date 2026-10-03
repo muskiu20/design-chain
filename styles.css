@@ -644,8 +644,19 @@ button {
   display: none;
 }
 
-/* A small pointer touching the card below, so the bubble visually reads
-   as coming FROM the card rather than floating unrelated nearby. */
+/* positionArHint() flips to below the card when there isn't room above
+   (e.g. a two-line definition over a card tracking near the top of the
+   frame) — anchor the bubble's top-center instead of its bottom-center. */
+.ar-hint--below {
+  translate: -50% 0;
+}
+
+/* A small pointer touching the card, so the bubble visually reads as
+   coming FROM the card rather than floating unrelated nearby. Points
+   down at a card below by default; .ar-hint--below::after further down
+   flips it to point up at a card above instead — that rule must come
+   AFTER this one in the file, since both selectors have equal specificity
+   and CSS falls back to source order for properties declared in both. */
 .ar-hint::after {
   content: "";
   position: absolute;
@@ -658,6 +669,15 @@ button {
   border-bottom: 1.5px solid var(--warning);
   translate: -50% 0;
   rotate: 45deg;
+}
+
+.ar-hint--below::after {
+  top: -6px;
+  bottom: auto;
+  border-right: none;
+  border-bottom: none;
+  border-left: 1.5px solid var(--warning);
+  border-top: 1.5px solid var(--warning);
 }
 
 @keyframes ar-hint-pop {

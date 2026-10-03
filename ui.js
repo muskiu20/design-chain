@@ -406,36 +406,59 @@
   let hintThresholdSeconds = 0; // set per round from the round's own starting time
   let arHintShown = false;
 
-  // Anchors the hint just above the card's current on-screen position
-  // (tracked every frame in arRenderLoop() while shown, since the card
-  // keeps moving with the face) instead of a fixed screen position —
-  // previously bottom: 26% of the screen, which in typical selfie framing
-  // landed right around the player's mouth/chin, nowhere near the card it
-  // was actually about. Clamped so it can never cover the HUD even if the
-  // card is tracking high in frame with little room above it.
+  // Anchors the hint to the card's current on-screen position (tracked
+  // every frame in arRenderLoop() while shown, since the card keeps moving
+  // with the face) instead of a fixed screen position — previously
+  // bottom: 26% of the screen, which in typical selfie framing landed
+  // right around the player's mouth/chin, nowhere near the card it was
+  // actually about.
+  //
+  // Prefers sitting just above the card, but FLIPS to below it when there
+  // isn't room above — a real on-device report, not a hypothetical: the
+  // hint's text is a full sentence (a term's definition) that can wrap to
+  // two lines, and the AR card is deliberately tiny (AR_CARD_SIZE_FACTOR),
+  // so a two-line hint can easily be taller than the card itself. An
+  // earlier version only clamped the position against a guessed height,
+  // which let the hint overlap and hide the card instead of relocating.
+  // The hint's own rendered height is measured directly (its final text is
+  // already set and it's already unhidden by the time this runs), not
+  // guessed, so the space check is exact regardless of how long the
+  // definition is.
   function positionArHint() {
     const cardRect = el.wordCard.getBoundingClientRect();
     const frame = el.gameScreen.getBoundingClientRect();
     const hudRect = el.hud.getBoundingClientRect();
     const margin = 12;
-    const gapAboveCard = 14;
-    const hintHeightAllowance = 56; // enough room for a typical one-to-two-line hint, so the clamp doesn't itself get covered
+    const gap = 14; // between the hint and whichever edge of the card it's anchored to
 
     const centerX = cardRect.left + cardRect.width / 2;
     const clampedX = Math.min(frame.right - margin, Math.max(frame.left + margin, centerX));
-
-    const desiredBottom = cardRect.top - gapAboveCard;
-    const minBottom = hudRect.bottom + margin + hintHeightAllowance;
-    const clampedBottom = Math.max(desiredBottom, minBottom);
-
     el.arHint.style.left = `${clampedX}px`;
-    el.arHint.style.top = `${clampedBottom}px`;
-    // When the HUD clamp pushes the hint down, it can end up slightly
-    // overlapping the card instead of sitting just above it — the pointer
-    // would then touch the middle of the card rather than its top edge,
-    // which reads as a glitch rather than "pointing at the card." Hidden
-    // in exactly that case; the bubble itself still shows either way.
-    el.arHint.classList.toggle("ar-hint--clamped", desiredBottom < minBottom);
+
+    const hintHeight = el.arHint.getBoundingClientRect().height || 44;
+    const roomAbove = cardRect.top - hudRect.bottom - margin;
+    const roomBelow = frame.bottom - margin - cardRect.bottom;
+    const neededSpace = hintHeight + gap;
+
+    const placeBelow = roomAbove < neededSpace && roomBelow >= neededSpace;
+    el.arHint.classList.toggle("ar-hint--below", placeBelow);
+
+    if (placeBelow) {
+      el.arHint.style.top = `${cardRect.bottom + gap}px`;
+      el.arHint.classList.remove("ar-hint--clamped");
+    } else {
+      // Above (the default). Still clamped against the HUD as a last
+      // resort for the rare case where neither side has room — now a true
+      // last resort, not the common case, since the flip above handles
+      // the usual one. The pointer is hidden whenever this clamp actually
+      // engages, since it would otherwise point at the card's middle
+      // instead of its edge.
+      const desiredTop = cardRect.top - gap;
+      const minTop = hudRect.bottom + margin + hintHeight;
+      const clampedTop = Math.max(desiredTop, minTop);
+      el.arHint.style.top = `${clampedTop}px`;
+      el.arHint.classList.toggle("ar-hint--clamped", clampedTop > desiredTop);
+    }
   }
 
   function showArHint() {
@@ -443,8 +466,12 @@
     arHintShown = true;
     Game.useHint();
     el.arHint.textContent = hintTextFor(activeTerm);
-    positionArHint(); // before un-hiding, so it never flashes at the wrong spot for a frame
+    // Un-hidden before positioning, not after: positionArHint() measures
+    // the hint's own rendered height, which needs it laid out first. No
+    // flash at the wrong spot results — both steps run synchronously
+    // before the browser's next paint.
     el.arHint.classList.remove("hidden");
+    positionArHint();
     announce("Hint: " + hintTextFor(activeTerm));
   }
 
@@ -784,7 +811,7 @@
   const VOICE_DEBUG_ENABLED = new URLSearchParams(location.search).has("debugvoice");
   // Shown in the copied debug log so a pasted log says which code ran.
   // Keep in sync with CACHE_VERSION in sw.js.
-  const BUILD_VERSION = "v47";
+  const BUILD_VERSION = "v48";
   const VOICE_DEBUG_VISIBLE_LINES = 60; // how many lines the on-screen panel shows at once
   const VOICE_DEBUG_LOG_CAP = 1000; // how many lines "Copy" can pull from — far more than fits on screen
   const voiceDebugStartTime = performance.now(); // single shared clock for every line, regardless of source
