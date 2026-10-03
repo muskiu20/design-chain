@@ -1,5 +1,5 @@
 /**
- * Design Chain — service worker (Phase 4: offline support).
+ * Guess the Word — service worker (Phase 4: offline support).
  *
  * Cache-first: on install, precaches every game file, the self-hosted
  * MediaPipe vendor files, and the face model, so the whole game (including
@@ -15,8 +15,8 @@
  * stuck on stale cached files indefinitely, since cache-first never asks
  * the network to check for changes on its own.
  */
-const CACHE_VERSION = "v11";
-const CACHE_NAME = `design-chain-${CACHE_VERSION}`;
+const CACHE_VERSION = "v37";
+const CACHE_NAME = `guess-the-word-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
   "./",
@@ -25,6 +25,7 @@ const PRECACHE_URLS = [
   "design-terms.js",
   "game.js",
   "face.js",
+  "voice-vosk.js",
   "voice.js",
   "ui.js",
   "manifest.json",
@@ -69,7 +70,8 @@ self.addEventListener("activate", (event) => {
       const cacheNames = await caches.keys();
       await Promise.all(
         cacheNames
-          .filter((name) => name.startsWith("design-chain-") && name !== CACHE_NAME)
+          // Also clears caches left by the game's earlier name ("design-chain-")
+          .filter((name) => (name.startsWith("guess-the-word-") || name.startsWith("design-chain-")) && name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       );
       await self.clients.claim(); // control already-open tabs too, not just future ones

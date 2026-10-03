@@ -1,7 +1,7 @@
 {
-  "name": "files",
+  "name": "guess-the-word",
   "version": "1.0.0",
-  "description": "",
+  "description": "A browser word game: guess the connecting word to build a chain of real design terms.",
   "main": "design-terms.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

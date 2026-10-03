@@ -1,4 +1,4 @@
-/* Design Chain — Phase 2: designer-tool theme.
+/* Guess the Word — Phase 2: designer-tool theme.
    Mobile-first: everything below is written for a phone viewport by default.
    The only concession to larger screens is pinning `.screen` to a phone-width
    column (see below) so the layout never just stretches out on desktop. */
@@ -228,7 +228,8 @@ button {
 }
 
 .logo {
-  font-size: 2.4rem;
+  /* Scales down on narrow phones so "Guess the Word" stays on one line. */
+  font-size: clamp(1.75rem, 8.4vw, 2.4rem);
   margin: 0;
 }
 
@@ -501,17 +502,107 @@ button {
   box-shadow: var(--shadow-sm);
 }
 
-/* Offset from the "move into frame" hint's position (above) — the two are
-   unrelated conditions (no face detected vs. the microphone reconnecting)
-   that could in principle both be true at once, so they shouldn't overlap. */
-.voice-reconnecting {
-  bottom: 32%;
-  color: var(--accent);
+/* Pause card shown when the player returns after leaving the app
+   mid-camera-game. The game has already switched to typing behind it. */
+.resume-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: min(320px, calc(100% - 32px));
+  padding: 1.5rem 1.25rem 1.25rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  /* The first shadow is a page-wide scrim, so the card reads as a modal
+     over the paused board. */
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35), var(--shadow-md);
+  text-align: center;
+}
+
+.resume-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+
+.resume-body {
+  margin: 0 0 1.1rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.resume-card .btn {
+  width: 100%;
+}
+
+/* Quiet pill near the bottom of the camera view, where the input bar sits
+   in typing mode: "Switch to typing" and "Tap to speak" (never both). */
+.ar-pill-btn {
+  position: fixed;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  min-height: 44px;
+  padding: 0.55em 1.2em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s var(--ease);
+}
+
+.ar-pill-btn:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+.ar-pill-btn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Small, non-blocking indicator while the face-tracking model downloads in
    the background (Phase 4) — gameplay and the camera view are never gated
    on this, so it's deliberately a quiet corner note, not a loading screen. */
+.ar-hint {
+  position: absolute;
+  bottom: 26%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 0.65em 1em;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  animation: ar-hint-in 0.25s ease;
+}
+
+/* Uses the standalone translate property, not transform: the caption is
+   centered with transform: translateX(-50%), which a transform animation
+   would replace for its duration (the caption would jump). */
+@keyframes ar-hint-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
 .model-load-progress {
   position: absolute;
   top: 0.75rem;
@@ -528,6 +619,10 @@ button {
   letter-spacing: 0.03em;
 }
 
+.voice-load-progress {
+  top: 3rem; /* below the face-tracking progress note, in case both show */
+}
+
 /* The HUD previously got a translucent, blurred backing in AR mode (to stay
    legible over the live camera feed) — removed per feedback: the HUD now
    floats directly over the video with no panel behind it at all, leaving
@@ -535,21 +630,31 @@ button {
    was dead code by this point anyway — the input bar is always hidden in
    AR mode now, see activateArMode() in ui.js.) */
 
-/* Removing the HUD's background panel (above) left its text/ring/swatches
-   blending into whatever the camera happens to show behind them. A
-   drop-shadow halo — tinted with --surface, so it's a light glow in light
-   mode and a dark glow in dark mode — keeps every HUD element legible
-   against arbitrary video content without reintroducing any panel; unlike
-   a background, filter: drop-shadow() reaches every child (text, the SVG
-   timer ring, the swatches) at once. Kept deliberately light (one halo
-   layer, low blur, low opacity) — just enough for contrast, not a heavy
-   glow of its own. The HUD's own border-bottom (meant to separate it from
-   the board on an opaque screen) is also dropped here — floating alone
-   over the live video with nothing else around it, it just read as a
-   stray line rather than a separator. */
+/* Over the live camera feed the HUD has no opaque screen behind it, and the
+   video can be any brightness — independent of the app's light/dark theme —
+   so text, ring and swatches that look fine on one background vanish on
+   another (reported on light backgrounds). Two compact "chips" (timer +
+   score, and tries) each carry their own mostly-opaque, blurred backing in
+   the theme's surface colour, so the theme's text colours always sit on the
+   surface colour they were designed for, whatever the video shows. A full
+   width bar was removed earlier for eating into the room the word card
+   needs; chips only cover the elements themselves. The HUD's own
+   border-bottom is dropped too — it separates the HUD from the board on an
+   opaque screen, and floating over video it just reads as a stray line. */
 #game-screen.ar-active .hud {
   border-bottom: none;
-  filter: drop-shadow(0 0 2px var(--surface)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+  align-items: flex-start;
+  padding: 0.6rem 0.75rem;
+}
+
+#game-screen.ar-active .hud-left,
+#game-screen.ar-active .hud-tries {
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-sm);
 }
 
 #game-screen.ar-active .board {
@@ -565,7 +670,7 @@ button {
 }
 
 .word-card.faded {
-  opacity: 0.55;
+  opacity: 0.72; /* still readable over a bright camera feed — it was 0.55 */
 }
 
 /* ---------- Board / word card ---------- */
@@ -1032,4 +1137,71 @@ button {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ---------- On-screen keyboard (typing mode) ----------
+   ui.js adds html.kb-open while the input has focus and the visual
+   viewport has shrunk by a keyboard, and keeps --vv-height / --vv-top at the
+   visible area's size and offset. The game screen is pinned to exactly that
+   area, so nothing hides behind the keyboard or scrolls away, and the
+   layout tightens (no app bar, a one-row HUD, less padding) so the HUD,
+   the word card and the input all fit above the keyboard even on a small
+   phone (about 400px of visible height on an iPhone SE). */
+html.kb-open,
+html.kb-open body {
+  overflow: hidden;
+}
+
+html.kb-open .app-bar {
+  display: none;
+}
+
+html.kb-open #game-screen {
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: var(--vv-height, 100dvh);
+  min-height: 0;
+}
+
+html.kb-open .hud {
+  flex-wrap: nowrap;
+  align-items: center;
+  padding: 0.4rem 1rem;
+}
+
+html.kb-open .hud-left {
+  flex-direction: row;
+  gap: 0.9rem;
+}
+
+html.kb-open .hud-timer,
+html.kb-open .timer-ring {
+  width: 40px;
+  height: 40px;
+}
+
+html.kb-open .hud-tries {
+  flex-direction: row;
+  gap: 0.35rem;
+}
+
+html.kb-open .board {
+  padding: 0.5rem 1rem;
+  min-height: 0;
+}
+
+html.kb-open .word-card {
+  padding: 1.25rem 1.5rem;
+}
+
+html.kb-open .card-main-word {
+  margin-top: 0;
+}
+
+html.kb-open .input-bar {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
 }

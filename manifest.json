@@ -1,6 +1,6 @@
 {
-  "name": "Design Chain",
-  "short_name": "Design Chain",
+  "name": "Guess the Word",
+  "short_name": "Guess the Word",
   "description": "Guess the connecting word to build a chain of real design terms.",
   "start_url": "./index.html",
   "scope": "./",

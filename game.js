@@ -1,5 +1,5 @@
 /**
- * Design Chain — game state & logic.
+ * Guess the Word — game state & logic.
  *
  * Owns all game state and rules. Knows nothing about the DOM. Relies on
  * the globals exposed by design-terms.js (CHAIN, CONTINUABLE, pick,
@@ -56,8 +56,8 @@ const Game = (() => {
   const TIME_BONUS_SECONDS = 10; // added to the leftover time when the hint was used
   const MAX_TRIES = 3;
   const TICK_MS = 100;
-  const BEST_SCORE_KEY = "designChainBestScore";
-  const RECENT_STARTS_KEY = "designChainRecentStarts";
+  const BEST_SCORE_KEY = "guessTheWordBestScore";
+  const RECENT_STARTS_KEY = "guessTheWordRecentStarts";
   const RECENT_STARTS_LIMIT = 30; // don't repeat an opening word within this many games
 
   // AI-category terms are kept out of the game entirely: pre-marking them as
@@ -247,9 +247,13 @@ const Game = (() => {
     });
   }
 
-  function start() {
+  // options.skipTerms: term strings this game must never pick (they go
+  // into usedTerms, which the picker already avoids). ui.js uses it for
+  // terms the current voice engine can't recognize — see voice-vosk.js.
+  function start(options = {}) {
     stopTimer();
     state = newGameState();
+    (options.skipTerms || []).forEach((term) => state.usedTerms.add(term));
     const recentStarts = loadRecentStarts();
     recentStarts.forEach((term) => state.usedTerms.add(term));
     pendingNextMainWord = null;

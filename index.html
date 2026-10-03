@@ -5,7 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#2d6cdf" />
-  <title>Design Chain</title>
+  <title>Guess the Word</title>
+  <meta name="description" content="A word game for designers: guess the connecting word to build a chain of real design terms." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Guess the Word" />
+  <meta property="og:description" content="Guess the connecting word to build a chain of real design terms. How long can your chain get?" />
+  <meta name="twitter:card" content="summary" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -16,7 +21,7 @@
        actual priority use case. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Design Chain" />
+  <meta name="apple-mobile-web-app-title" content="Guess the Word" />
   <!-- Resolves light/dark before the stylesheet paints, so the right palette
        shows immediately with no flash. Saved explicit choice wins; otherwise
        falls back to the system preference. ui.js keeps this in sync after. -->
@@ -24,7 +29,7 @@
     (function () {
       var theme = "light";
       try {
-        var saved = localStorage.getItem("designChainTheme");
+        var saved = localStorage.getItem("guessTheWordTheme");
         if (saved === "light" || saved === "dark") {
           theme = saved;
         } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
@@ -42,7 +47,7 @@
        consistent, never-overlapping home regardless of what's showing. -->
   <header class="app-bar">
     <span class="app-bar-left">
-      <span class="app-bar-title">Design Chain</span>
+      <span class="app-bar-title">Guess the Word</span>
       <span id="offline-badge" class="offline-badge hidden" role="status">Offline — you can still play</span>
     </span>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light theme">🌙</button>
@@ -50,16 +55,38 @@
 
   <!-- ================= GAME SCREEN (also the first screen the player sees) ================= -->
   <section id="game-screen" class="screen" aria-labelledby="game-title">
-    <h1 id="game-title" class="sr-only">Design Chain</h1>
+    <h1 id="game-title" class="sr-only">Guess the Word</h1>
 
     <!-- AR layer: camera feed + detected-face box. Hidden entirely outside
          AR mode; see the .ar-active modifier on #game-screen in styles.css. -->
     <div id="ar-layer" class="ar-layer hidden" aria-hidden="true">
       <video id="camera-video" class="camera-video" playsinline muted></video>
       <p id="move-into-frame-hint" class="move-into-frame hidden">Move into frame</p>
-      <p id="voice-reconnecting-hint" class="move-into-frame voice-reconnecting hidden" role="status">Reconnecting microphone…</p>
       <p id="model-load-progress" class="model-load-progress hidden" role="status"></p>
+      <p id="voice-load-progress" class="model-load-progress voice-load-progress hidden" role="status"></p>
+      <!-- Camera mode only: the hint shows by itself once half the time is gone
+           (the player is speaking, so can't tap the "i"). A caption outside the
+           word card, since the card is scaled down and moves with the face. -->
+      <p id="ar-hint" class="ar-hint hidden"></p>
     </div>
+
+    <!-- Shown when the player comes back after leaving the app mid-camera-game.
+         The game has already switched to typing behind it; the timer stays
+         paused until "Keep playing" — see the visibilitychange handler in ui.js. -->
+    <div id="resume-card" class="resume-card hidden" role="dialog" aria-modal="true" aria-labelledby="resume-title" aria-describedby="resume-body">
+      <h2 id="resume-title" class="resume-title">Paused</h2>
+      <p id="resume-body" class="resume-body">Voice answers stop when you leave the app. You can keep playing by typing.</p>
+      <button id="resume-btn" class="btn btn-primary" type="button">Keep playing</button>
+    </div>
+
+    <!-- Camera mode only: offered after a stretch of silence, in case the
+         microphone isn't hearing the player. See ui.js. -->
+    <button id="switch-to-typing-btn" class="ar-pill-btn hidden" type="button">Switch to typing</button>
+
+    <!-- Camera mode only: shown while the microphone sleeps after a silent
+         stretch (it isn't restarted automatically, to avoid Chrome's
+         start sound on Android). See ui.js. -->
+    <button id="tap-to-speak-btn" class="ar-pill-btn hidden" type="button">🎤 Tap to speak</button>
 
     <!-- HUD: timer + score stacked on the left, tries (lives) on the right.
          Same markup is shared by both the normal and AR screens. -->
@@ -73,7 +100,7 @@
           <span id="timer-value" class="timer-value">30</span>
         </div>
         <div class="hud-item hud-score">
-          <span class="hud-label">Layers</span>
+          <span class="hud-label">Score</span>
           <span id="score-value" class="hud-value">0</span>
         </div>
       </div>
@@ -89,7 +116,7 @@
       <!-- Start panel: sits where the word card goes, so the first thing shown is this
            game screen itself, not a separate landing page. -->
       <div id="start-panel" class="word-card start-panel">
-        <h2 class="logo">Design Chain</h2>
+        <h2 class="logo">Guess the Word</h2>
         <p class="tagline">Guess the connecting word to build a chain of real design terms.</p>
 
         <div class="example" aria-hidden="true">
@@ -111,6 +138,7 @@
           <span>Play in camera mode (AR)</span>
         </label>
         <p class="camera-privacy-note">Video is processed only on your device and is never uploaded.</p>
+        <p class="camera-privacy-note">Camera mode downloads a one-time ~40MB voice engine, so answers are recognized on your device.</p>
 
         <button id="play-btn" class="btn btn-primary" type="button">Play</button>
       </div>
@@ -148,6 +176,7 @@
         autocapitalize="characters"
         autocomplete="off"
         autocorrect="off"
+        enterkeyhint="go"
         spellcheck="false"
         aria-label="Type the connecting word"
         placeholder="Type your guess…"
@@ -158,7 +187,7 @@
   <!-- ================= GAME OVER SCREEN ================= -->
   <section id="gameover-screen" class="screen hidden" aria-labelledby="gameover-title">
     <div class="gameover-wrap">
-      <span class="export-tag" aria-hidden="true">design-chain__export.png</span>
+      <span class="export-tag" aria-hidden="true">guess-the-word__export.png</span>
       <header class="gameover-header">
         <h1 id="gameover-title">Game Over</h1>
 
@@ -173,8 +202,8 @@
           <button id="play-again-btn" class="btn btn-primary" type="button">
             <span class="btn-icon" aria-hidden="true">&#8635;</span> Play again
           </button>
-          <button id="copy-result-btn" class="btn btn-secondary" type="button">
-            <span class="btn-icon" aria-hidden="true">&#10697;</span> Copy result
+          <button id="share-result-btn" class="btn btn-secondary" type="button">
+            <span class="btn-icon" aria-hidden="true">&#10697;</span> Share result
           </button>
         </div>
         <p id="copy-confirm" class="copy-confirm" role="status" aria-live="polite"></p>
@@ -191,6 +220,7 @@
   <script src="design-terms.js"></script>
   <script src="game.js"></script>
   <script src="face.js"></script>
+  <script src="voice-vosk.js"></script>
   <script src="voice.js"></script>
   <script src="ui.js"></script>
 </body>

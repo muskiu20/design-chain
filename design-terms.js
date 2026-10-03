@@ -1,6 +1,6 @@
 /**
  * Design Chain — designer + AI compound-term dataset
- * 902 term pairs. Ranks 1–821 are the original set, roughly sorted from
+ * 920 term pairs. Ranks 1–821 are the original set, roughly sorted from
  * easiest to hardest; ranks 822–902 were added later (see below) and are
  * appended in insertion order rather than interleaved by difficulty — rank
  * is just an identifier here, nothing in the game logic depends on it or on
@@ -19,6 +19,15 @@
  *   Rounds 4–6   → 70% moderate, 30% hard
  *   Rounds 7–10  → 40% moderate, 60% hard
  *   Rounds 11+   → 20% moderate, 80% hard
+ *
+ * Ranks 903–920: current design vocabulary from recent conferences — Apple's
+ * WWDC 2025 (Liquid Glass), Figma Config 2026 (code layers, shader fills,
+ * the motion timeline), Google I/O's Material 3 Expressive (shape morphing,
+ * floating toolbar, state layers, dynamic color), the web platform's
+ * Interop 2026 work (container queries, view transitions, scroll timelines,
+ * anchor positioning, cascade layers) and role/UX trends (design engineer,
+ * multimodal and spatial design). Each is a real term, checked against all
+ * existing terms for duplicates; none is category "AI".
  *
  * Ranks 822–902: added to connect "dead end" words — common second words
  * (e.g. "chart", "voice", "map") that weren't themselves the first word of
@@ -8146,6 +8155,168 @@ const DESIGN_TERMS = [
     "term": "size chart",
     "category": "Workflow",
     "definition": "A chart showing product measurements across different sizes"
+  },
+  {
+    "rank": 903,
+    "difficulty": "moderate",
+    "first": "liquid",
+    "second": "glass",
+    "term": "liquid glass",
+    "category": "UI",
+    "definition": "Apple's translucent, light-bending interface material introduced in 2025."
+  },
+  {
+    "rank": 904,
+    "difficulty": "moderate",
+    "first": "container",
+    "second": "query",
+    "term": "container query",
+    "category": "Layout",
+    "definition": "CSS rule that styles a component based on the size of its parent instead of the screen."
+  },
+  {
+    "rank": 905,
+    "difficulty": "moderate",
+    "first": "view",
+    "second": "transition",
+    "term": "view transition",
+    "category": "Motion",
+    "definition": "Browser feature that animates smoothly between two page or interface states."
+  },
+  {
+    "rank": 906,
+    "difficulty": "moderate",
+    "first": "spatial",
+    "second": "design",
+    "term": "spatial design",
+    "category": "UX",
+    "definition": "Crafting interfaces that live in three-dimensional space around the user."
+  },
+  {
+    "rank": 907,
+    "difficulty": "hard",
+    "first": "shader",
+    "second": "fill",
+    "term": "shader fill",
+    "category": "Tools",
+    "definition": "Paint type that colors a shape with a small GPU program for effects like noise or glow."
+  },
+  {
+    "rank": 908,
+    "difficulty": "hard",
+    "first": "code",
+    "second": "layer",
+    "term": "code layer",
+    "category": "Tools",
+    "definition": "Canvas object backed by real code, whose edits sync back to the codebase."
+  },
+  {
+    "rank": 909,
+    "difficulty": "moderate",
+    "first": "motion",
+    "second": "timeline",
+    "term": "motion timeline",
+    "category": "Motion",
+    "definition": "Track of keyframes arranged over time to choreograph an animation."
+  },
+  {
+    "rank": 910,
+    "difficulty": "moderate",
+    "first": "shape",
+    "second": "morphing",
+    "term": "shape morphing",
+    "category": "Motion",
+    "definition": "Smooth transformation of one outline into another, used in Material 3 Expressive."
+  },
+  {
+    "rank": 911,
+    "difficulty": "moderate",
+    "first": "floating",
+    "second": "toolbar",
+    "term": "floating toolbar",
+    "category": "UI",
+    "definition": "Compact bar of actions that hovers above the content it edits."
+  },
+  {
+    "rank": 912,
+    "difficulty": "easy",
+    "first": "loading",
+    "second": "indicator",
+    "term": "loading indicator",
+    "category": "UI",
+    "definition": "Animation that tells people content is on its way."
+  },
+  {
+    "rank": 913,
+    "difficulty": "hard",
+    "first": "scroll",
+    "second": "timeline",
+    "term": "scroll timeline",
+    "category": "Motion",
+    "definition": "Animation clock driven by scroll position instead of elapsed time."
+  },
+  {
+    "rank": 914,
+    "difficulty": "hard",
+    "first": "anchor",
+    "second": "positioning",
+    "term": "anchor positioning",
+    "category": "Layout",
+    "definition": "CSS technique that places a popover or tooltip relative to another element."
+  },
+  {
+    "rank": 915,
+    "difficulty": "hard",
+    "first": "cascade",
+    "second": "layer",
+    "term": "cascade layer",
+    "category": "Tools",
+    "definition": "CSS feature that groups rules into ordered tiers to control which styles win."
+  },
+  {
+    "rank": 916,
+    "difficulty": "moderate",
+    "first": "design",
+    "second": "engineer",
+    "term": "design engineer",
+    "category": "Workflow",
+    "definition": "Hybrid role that designs interfaces and also builds them in code."
+  },
+  {
+    "rank": 917,
+    "difficulty": "hard",
+    "first": "multimodal",
+    "second": "interface",
+    "term": "multimodal interface",
+    "category": "UX",
+    "definition": "System that accepts several kinds of input, such as touch, voice and gaze."
+  },
+  {
+    "rank": 918,
+    "difficulty": "hard",
+    "first": "wide",
+    "second": "gamut",
+    "term": "wide gamut",
+    "category": "Color",
+    "definition": "Color range broader than sRGB, as shown by Display P3 screens."
+  },
+  {
+    "rank": 919,
+    "difficulty": "moderate",
+    "first": "state",
+    "second": "layer",
+    "term": "state layer",
+    "category": "UI",
+    "definition": "Translucent overlay that shows hover, focus or press on a component."
+  },
+  {
+    "rank": 920,
+    "difficulty": "moderate",
+    "first": "dynamic",
+    "second": "color",
+    "term": "dynamic color",
+    "category": "Color",
+    "definition": "Palette that adapts itself from a wallpaper or a single seed hue, popularized by Material You."
   }
 ];
 

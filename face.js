@@ -1,5 +1,5 @@
 /**
- * Design Chain — camera & face tracking (AR mode).
+ * Guess the Word — camera & face tracking (AR mode).
  *
  * Small, self-contained interface: startCamera(videoElement), stopCamera(),
  * onFacePosition(callback). Nothing else in the app reaches into this file's
