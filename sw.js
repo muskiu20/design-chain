@@ -15,7 +15,7 @@
  * stuck on stale cached files indefinitely, since cache-first never asks
  * the network to check for changes on its own.
  */
-const CACHE_VERSION = "v41";
+const CACHE_VERSION = "v42";
 const CACHE_NAME = `guess-the-word-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

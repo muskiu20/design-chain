@@ -382,6 +382,21 @@
   // caption (#ar-hint). It counts as using the hint, exactly like tapping
   // the "i" does (the next round gets this round's leftover time + the
   // bonus instead of a fresh full timer). Typing mode is unchanged.
+  //
+  // hintWindowArmed guards against a compounding bug: a round that starts
+  // AT or BELOW HINT_REVEAL_SECONDS (which the hint-bonus formula above can
+  // produce — e.g. the hint was used with only a few seconds left) would
+  // otherwise satisfy "timeRemaining <= HINT_REVEAL_SECONDS" on literally
+  // its first tick, auto-showing the hint again immediately. That round
+  // counts as hint-used too, so the round after it gets the same short
+  // bonus timer, which triggers the same instant hint again — once the
+  // hint fires once, every later round keeps re-arming the bonus timer and
+  // the hint never again waits for the last 15 seconds. Only arming the
+  // trigger for rounds that actually started with more time than the
+  // threshold breaks that loop: a round that starts inside the threshold
+  // simply doesn't offer the (redundant) hint, so it never sets hintUsed,
+  // and the round after it gets a fresh full timer again.
+  let hintWindowArmed = false;
   let arHintShown = false;
 
   function showArHint() {
@@ -729,7 +744,7 @@
   const VOICE_DEBUG_ENABLED = new URLSearchParams(location.search).has("debugvoice");
   // Shown in the copied debug log so a pasted log says which code ran.
   // Keep in sync with CACHE_VERSION in sw.js.
-  const BUILD_VERSION = "v41";
+  const BUILD_VERSION = "v42";
   const VOICE_DEBUG_VISIBLE_LINES = 60; // how many lines the on-screen panel shows at once
   const VOICE_DEBUG_LOG_CAP = 1000; // how many lines "Copy" can pull from — far more than fits on screen
   const voiceDebugStartTime = performance.now(); // single shared clock for every line, regardless of source
@@ -1793,12 +1808,15 @@
     renderRound(payload.term, payload.showNewChainMessage, payload.levelUp, payload.level);
     updateHud(payload.state);
     setTimerRing(payload.state.timeRemaining);
+    // See hintWindowArmed's comment above: only a round that starts with
+    // more time than the hint threshold can ever trigger the auto-hint.
+    hintWindowArmed = payload.state.timeRemaining > HINT_REVEAL_SECONDS;
   });
 
   Game.on("tick", (payload) => {
     setTimerRing(payload.timeRemaining);
     if (payload.timeRemaining <= LETTER_REVEAL_SECONDS) maybeRevealLetter();
-    if (payload.timeRemaining <= HINT_REVEAL_SECONDS) {
+    if (hintWindowArmed && payload.timeRemaining <= HINT_REVEAL_SECONDS) {
       if (arModeActive) showArHint();
       else el.hintBtn.classList.remove("hidden");
     }
