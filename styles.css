@@ -589,6 +589,14 @@ button {
      wrong the moment it doesn't, e.g. the centered phone-width column on
      a wider screen used for testing. */
   position: fixed;
+  /* #word-card.ar-tracked sets z-index: 1 explicitly, so without a
+     z-index here the card always wins (an explicit z-index beats
+     z-index: auto regardless of DOM order) — the card is pinned to the
+     tracked head position and the hint sits right at its edge, so they
+     overlap often enough that this was genuinely visible, not a rare
+     edge case ("falls behind the card"). One higher keeps the hint on
+     top whenever they touch. */
+  z-index: 2;
   left: 0;
   top: 0;
   translate: -50% -100%;
