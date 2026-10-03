@@ -11,6 +11,7 @@
   const WRONG_ANIM_MS = 400;
   const GAMEOVER_DELAY_MS = 900;
   const CHAIN_TOAST_MS = 1200;
+  const LEVEL_TOAST_MS = 2400; // a level-up notice stays a little longer than "New chain!"
   const HINT_REVEAL_SECONDS = 15;
 
   const TIMER_RADIUS = 26;
@@ -70,6 +71,8 @@
     modelLoadProgress: document.getElementById("model-load-progress"),
     voiceLoadProgress: document.getElementById("voice-load-progress"),
     arHint: document.getElementById("ar-hint"),
+    nearMiss: document.getElementById("near-miss"),
+    arNearMiss: document.getElementById("ar-near-miss"),
     cameraToggleInput: document.getElementById("camera-toggle-input"),
     cameraStatusPanel: document.getElementById("camera-status-panel"),
     cameraStatusMessage: document.getElementById("camera-status-message"),
@@ -232,24 +235,59 @@
   }
 
   // ---------- Word card ----------
+  // ---------- Letter reveal ----------
+  // With LETTER_REVEAL_SECONDS left, one letter of the answer is shown in
+  // its slot, for the rest of the round. It's deliberately a *random* later
+  // letter: never the first (already shown) and never the very next one,
+  // which would just hand over the obvious start of the word. Answers of
+  // one or two letters have nothing to reveal. Scoring is unchanged.
+  const LETTER_REVEAL_SECONDS = 8;
+  let revealedSlot = null; // index of the revealed slot this round, or null
+  let revealJustHappened = false; // lets that slot pop once when it appears
+  let currentSlotText = ""; // what the slots were last built with, to rebuild after a reveal
+
+  function revealIndexFor(wordLength) {
+    if (wordLength < 3) return null;
+    return 2 + Math.floor(Math.random() * (wordLength - 2)); // 2 .. wordLength - 1
+  }
+
+  function maybeRevealLetter() {
+    if (revealedSlot !== null || !activeSecondWord) return;
+    const index = revealIndexFor(activeSecondWord.length);
+    if (index === null) return;
+    revealedSlot = index;
+    revealJustHappened = true;
+    buildSlots(activeSecondWord, currentSlotText);
+    announce(`Hint: letter ${index + 1} is ${activeSecondWord[index].toUpperCase()}.`);
+  }
+
   function buildSlots(secondWord, typedValue) {
+    currentSlotText = typedValue;
     el.guessSlots.innerHTML = "";
     for (let i = 0; i < secondWord.length; i++) {
       const slot = document.createElement("span");
       const isFirst = i === 0;
       const typedChar = typedValue[i];
-      const char = isFirst ? secondWord[0] : typedChar;
+      const isRevealed = i === revealedSlot && !typedChar; // a typed or spoken letter takes over its slot
+      const char = isFirst ? secondWord[0] : typedChar || (isRevealed ? secondWord[i] : "");
 
       slot.className = "slot";
       if (isFirst) slot.classList.add("locked", "filled");
       else if (typedChar) slot.classList.add("filled");
+      else if (isRevealed) {
+        slot.classList.add("revealed");
+        if (revealJustHappened) {
+          slot.classList.add("just-revealed");
+          revealJustHappened = false;
+        }
+      }
 
       slot.textContent = char ? char.toUpperCase() : "";
       el.guessSlots.appendChild(slot);
     }
   }
 
-  function renderRound(term, showNewChainMessage) {
+  function renderRound(term, showNewChainMessage, levelUp, level) {
     activeSecondWord = term.second;
     previousTerm = activeTerm;
     activeTerm = term;
@@ -260,11 +298,14 @@
     el.wordCard.classList.remove("correct", "wrong");
     el.mainWord.textContent = term.first.toUpperCase();
     el.cardMerged.textContent = "";
+    revealedSlot = null; // a new round: nothing revealed yet
+    revealJustHappened = false;
     buildSlots(activeSecondWord, "");
 
     el.hintBtn.classList.add("hidden");
     hideHintText();
     hideArHint();
+    hideNearMiss();
 
     el.guessInput.readOnly = false;
     el.guessInput.value = "";
@@ -272,7 +313,9 @@
     if (!arModeActive) el.guessInput.focus();
     if (voiceActive && micAsleep) Voice.start(); // a new word wakes the mic — its start sound doubles as a "speak now" cue
 
-    if (showNewChainMessage) showChainToast();
+    // A level-up takes the toast; it matters more than a new chain.
+    if (levelUp) showToast(`Level ${level} — longer words ahead!`, undefined, LEVEL_TOAST_MS);
+    else if (showNewChainMessage) showChainToast();
   }
 
   // ---------- On-screen keyboard (typing mode) ----------
@@ -374,15 +417,22 @@
   });
 
   function showChainToast() {
+    showToast("New chain!", "New chain! " + activeSecondWord.charAt(0).toUpperCase() + " blank.");
+  }
+
+  // The little pill above the card: "New chain!" or a level-up notice.
+  function showToast(text, announcement, durationMs = CHAIN_TOAST_MS) {
     clearTimeout(toastTimer);
+    el.chainToast.textContent = text;
     el.chainToast.classList.add("show");
-    announce("New chain! " + activeSecondWord.charAt(0).toUpperCase() + " blank.");
-    toastTimer = setTimeout(() => el.chainToast.classList.remove("show"), CHAIN_TOAST_MS);
+    announce(announcement || text);
+    toastTimer = setTimeout(() => el.chainToast.classList.remove("show"), durationMs);
   }
 
   // ---------- Input handling ----------
   // Feedback fires the instant every slot is filled — no need to press Enter.
   el.guessInput.addEventListener("input", () => {
+    hideNearMiss(); // typing again — the message has done its job
     buildSlots(activeSecondWord, el.guessInput.value);
     if (activeSecondWord && el.guessInput.value.length === activeSecondWord.length) {
       submitCurrentGuess();
@@ -401,7 +451,66 @@
     if (!result) return;
 
     if (result.result === "correct") handleCorrectFeedback(result);
-    else handleWrongFeedback(result);
+    else handleWrongFeedback(result, value);
+  }
+
+  // ---------- Near-miss feedback ----------
+  // A wrong guess still costs a try — nothing here changes scoring — but
+  // when it was nearly right the player is told so ("Very close!") instead
+  // of only seeing red, which also softens a voice misrecognition that was
+  // a letter or two off.
+  const NEAR_MISS_MS = 2200;
+  let nearMissTimer = null;
+
+  // Letter-level edit distance between two short lowercase words. Swapping
+  // two neighbouring letters ("chrat" for "chart"), the commonest typing
+  // slip, counts as one mistake, not two.
+  function editDistance(a, b) {
+    const rows = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) rows[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+          rows[i][j] = Math.min(rows[i][j], rows[i - 2][j - 2] + 1);
+        }
+      }
+    }
+    return rows[a.length][b.length];
+  }
+
+  // "very-close", "warm" or null. Answers of one or two letters never get a
+  // message (nearly everything is "close" to them); a one-letter slip only
+  // counts as very close for answers of four letters or more.
+  function closenessOf(guess, answer) {
+    const a = answer.toLowerCase();
+    const g = guess.toLowerCase().replace(/[^a-z]/g, "");
+    if (a.length <= 2 || !g || g === a) return null;
+    const similarity = 1 - editDistance(g, a) / Math.max(g.length, a.length);
+    if (similarity >= 0.75 && a.length >= 4) return "very-close";
+    if (similarity >= 0.5) return "warm";
+    return null;
+  }
+
+  function nearMissFor(rawGuess) {
+    if (!activeTerm) return null;
+    const connecting = extractConnectingWordGuess(rawGuess, activeTerm.first, activeSecondWord);
+    return closenessOf(connecting, activeSecondWord);
+  }
+
+  function showNearMiss(kind) {
+    const target = arModeActive ? el.arNearMiss : el.nearMiss;
+    target.textContent = kind === "very-close" ? "Very close!" : "Getting warm";
+    target.classList.toggle("very-close", kind === "very-close");
+    target.classList.remove("hidden");
+    clearTimeout(nearMissTimer);
+    nearMissTimer = setTimeout(hideNearMiss, NEAR_MISS_MS);
+  }
+
+  function hideNearMiss() {
+    clearTimeout(nearMissTimer);
+    el.nearMiss.classList.add("hidden");
+    el.arNearMiss.classList.add("hidden");
   }
 
   function handleCorrectFeedback(result) {
@@ -429,8 +538,9 @@
     }, CORRECT_SLOT_REVEAL_MS + CORRECT_ANIM_MS);
   }
 
-  function handleWrongFeedback(result) {
+  function handleWrongFeedback(result, guessText) {
     updateHud(result.state);
+    const nearMiss = result.state.over ? null : nearMissFor(guessText || "");
     el.wordCard.classList.remove("correct");
     // Restart the shake animation even if it's still mid-play from a fast retry.
     el.wordCard.classList.remove("wrong");
@@ -442,7 +552,9 @@
       return; // the 'gameover' listener below takes over from here
     }
 
-    announce(`Wrong. ${result.state.tries} ${result.state.tries === 1 ? "try" : "tries"} left.`);
+    if (nearMiss) showNearMiss(nearMiss);
+    const nearMissWords = nearMiss === "very-close" ? " Very close." : nearMiss === "warm" ? " Getting warm." : "";
+    announce(`Wrong.${nearMissWords} ${result.state.tries} ${result.state.tries === 1 ? "try" : "tries"} left.`);
     el.guessInput.value = "";
     el.guessInput.readOnly = true;
     buildSlots(activeSecondWord, "");
@@ -617,7 +729,7 @@
   const VOICE_DEBUG_ENABLED = new URLSearchParams(location.search).has("debugvoice");
   // Shown in the copied debug log so a pasted log says which code ran.
   // Keep in sync with CACHE_VERSION in sw.js.
-  const BUILD_VERSION = "v37";
+  const BUILD_VERSION = "v41";
   const VOICE_DEBUG_VISIBLE_LINES = 60; // how many lines the on-screen panel shows at once
   const VOICE_DEBUG_LOG_CAP = 1000; // how many lines "Copy" can pull from — far more than fits on screen
   const voiceDebugStartTime = performance.now(); // single shared clock for every line, regardless of source
@@ -1391,12 +1503,19 @@
   // the *last* occurrence, so a repeated attempt run together into one
   // transcript ("full lead full bleed") previews just the latest one
   // ("bleed").
-  function extractConnectingWordGuess(heard, mainWord) {
+  function extractConnectingWordGuess(heard, mainWord, answer) {
     const normalizedHeard = heard.toLowerCase().replace(/[\s-]+/g, "");
     const normalizedMain = (mainWord || "").toLowerCase();
     const cut = normalizedMain ? normalizedHeard.lastIndexOf(normalizedMain) : -1;
-    if (cut >= 0 && normalizedHeard.length > cut + normalizedMain.length) {
-      return normalizedHeard.slice(cut + normalizedMain.length);
+    // Strip the main word even when nothing follows it yet. Saying a whole
+    // term ("liquid glass") delivers "liquid" first, and returning that
+    // as-is filled the slots for GLASS with the letters of LIQUID until the
+    // second word arrived — confusing, since it looked like a wrong guess.
+    if (cut >= 0) return normalizedHeard.slice(cut + normalizedMain.length);
+    // Likewise a partial main word still being recognized ("liq"), unless
+    // it could just as well be the start of the answer.
+    if (normalizedHeard && normalizedMain.startsWith(normalizedHeard) && !(answer || "").toLowerCase().startsWith(normalizedHeard)) {
+      return "";
     }
     return normalizedHeard;
   }
@@ -1485,7 +1604,7 @@
     // since it already strips whitespace/hyphens and checks both the
     // connecting word and the complete term on its own.
     const heardSoFar = pendingVoiceParts.join("");
-    const slotGuess = extractConnectingWordGuess(heardSoFar, activeTerm && activeTerm.first);
+    const slotGuess = extractConnectingWordGuess(heardSoFar, activeTerm && activeTerm.first, activeSecondWord);
     buildSlots(activeSecondWord, slotGuess);
 
     // Test this fragment alone first, before waiting on the debounce at
@@ -1534,7 +1653,7 @@
     const preview = pendingVoiceParts.join("") + transcript;
     const matched = findAcceptedVoiceGuess([preview]);
     if (matched) interimMatchedGuess = matched; // kept until this utterance's final result — see handleVoiceResult()
-    const slotGuess = extractConnectingWordGuess(preview, activeTerm && activeTerm.first);
+    const slotGuess = extractConnectingWordGuess(preview, activeTerm && activeTerm.first, activeSecondWord);
     buildSlots(activeSecondWord, slotGuess);
   }
 
@@ -1671,13 +1790,14 @@
 
   // ---------- Game event wiring ----------
   Game.on("round", (payload) => {
-    renderRound(payload.term, payload.showNewChainMessage);
+    renderRound(payload.term, payload.showNewChainMessage, payload.levelUp, payload.level);
     updateHud(payload.state);
     setTimerRing(payload.state.timeRemaining);
   });
 
   Game.on("tick", (payload) => {
     setTimerRing(payload.timeRemaining);
+    if (payload.timeRemaining <= LETTER_REVEAL_SECONDS) maybeRevealLetter();
     if (payload.timeRemaining <= HINT_REVEAL_SECONDS) {
       if (arModeActive) showArHint();
       else el.hintBtn.classList.remove("hidden");

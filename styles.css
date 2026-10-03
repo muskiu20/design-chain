@@ -821,6 +821,31 @@ button {
   100% { transform: scale(1); opacity: 1; }
 }
 
+.near-miss {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.near-miss.very-close {
+  color: var(--warning);
+}
+
+/* Camera mode: a pill over the video, above the hint caption. */
+.near-miss-pill {
+  position: absolute;
+  bottom: 34%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.45em 1.1em;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+
 .hint-text {
   margin: 1rem 0 0;
   font-size: 0.9rem;
@@ -867,6 +892,14 @@ button {
 .slot.locked {
   border-color: var(--text-tertiary);
   color: var(--text-secondary);
+}
+/* The letter given away when the time is nearly up. */
+.slot.revealed {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+.slot.just-revealed {
+  animation: slot-pop 0.3s ease;
 }
 
 @keyframes slot-pop {

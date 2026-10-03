@@ -68,6 +68,8 @@
            (the player is speaking, so can't tap the "i"). A caption outside the
            word card, since the card is scaled down and moves with the face. -->
       <p id="ar-hint" class="ar-hint hidden"></p>
+      <!-- Camera mode: "Very close!" / "Getting warm" after a wrong guess (typing mode shows it inside the card). -->
+      <p id="ar-near-miss" class="near-miss near-miss-pill hidden" aria-hidden="true"></p>
     </div>
 
     <!-- Shown when the player comes back after leaving the app mid-camera-game.
@@ -160,6 +162,7 @@
         <div class="card-main-word" id="main-word"></div>
         <div class="card-slots" id="guess-slots" aria-hidden="true"></div>
         <div class="card-merged" id="card-merged" aria-hidden="true"></div>
+        <p id="near-miss" class="near-miss hidden" aria-hidden="true"></p>
         <p id="hint-text" class="hint-text hidden"></p>
       </div>
 

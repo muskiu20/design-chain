@@ -54,6 +54,24 @@
 const Game = (() => {
   const TIMER_SECONDS = 30; // normal reset value, and the cap on a hint-bonus round
   const TIME_BONUS_SECONDS = 10; // added to the leftover time when the hint was used
+
+  // Difficulty climbs with the round (round = correct answers so far + 1).
+  // Each level caps the length of the ANSWER word — the word the player has
+  // to say or type — so the early rounds only use short, easy-to-say words
+  // and longer ones arrive as the player climbs. The cap applies to every
+  // pick (continuing a chain and starting a new one), on top of the existing
+  // round-paced easy/moderate/hard mix for new chains. Edit this table to
+  // retune: about 78% of the playable terms have answers of 6 letters or
+  // fewer and 92% of 8 or fewer.
+  const LEVELS = [
+    { level: 1, throughRound: 8, maxAnswerLength: 6 },
+    { level: 2, throughRound: 16, maxAnswerLength: 8 },
+    { level: 3, throughRound: Infinity, maxAnswerLength: Infinity },
+  ];
+
+  function levelFor(round) {
+    return LEVELS.find((entry) => round <= entry.throughRound) || LEVELS[LEVELS.length - 1];
+  }
   const MAX_TRIES = 3;
   const TICK_MS = 100;
   const BEST_SCORE_KEY = "guessTheWordBestScore";
@@ -104,8 +122,8 @@ const Game = (() => {
   // round-based tier restriction. Prefers "alive" (further-continuable)
   // options, same preference startTerm() uses for fresh chains, to keep the
   // chain going as long as possible. Returns null only on a genuine dead end.
-  function findContinuation(mainWord, used) {
-    const options = (CHAIN[mainWord] || []).filter((t) => !used.has(t.term));
+  function findContinuation(mainWord, used, maxAnswerLength = Infinity) {
+    const options = (CHAIN[mainWord] || []).filter((t) => !used.has(t.term) && t.second.length <= maxAnswerLength);
     if (!options.length) return null;
     const alive = options.filter((t) => CONTINUABLE.has(t.second));
     return pick(alive.length ? alive : options);
@@ -115,11 +133,26 @@ const Game = (() => {
   // possible, otherwise start a fresh one (round-paced difficulty, same as
   // the original design) — only reached on a genuine dead end or game start.
   function pickNextTerm(round, used) {
+    const maxAnswerLength = levelFor(round).maxAnswerLength;
     if (state.currentMainWord) {
-      const continuation = findContinuation(state.currentMainWord, used);
+      const continuation = findContinuation(state.currentMainWord, used, maxAnswerLength);
       if (continuation) return continuation;
     }
-    return startTerm(pickTier(round), used);
+    return startTermWithin(pickTier(round), used, maxAnswerLength);
+  }
+
+  // startTerm() (design-terms.js) with the level's answer-length cap. If
+  // nothing short enough is left it falls back to the uncapped pick, so a
+  // game can never stall on an empty pool.
+  function startTermWithin(tier, used, maxAnswerLength) {
+    if (maxAnswerLength === Infinity) return startTerm(tier, used);
+    for (const t of fallbackTiers(tier)) {
+      const pool = DESIGN_TERMS.filter((x) => x.difficulty === t && !used.has(x.term) && x.second.length <= maxAnswerLength);
+      const alive = pool.filter((x) => CONTINUABLE.has(x.second));
+      if (alive.length) return { ...pick(alive), newChain: true };
+      if (pool.length) return { ...pick(pool), newChain: true };
+    }
+    return startTerm(tier, used);
   }
 
   const listeners = {};
@@ -172,6 +205,7 @@ const Game = (() => {
     return {
       score: state.score,
       round: state.round,
+      level: state.level,
       tries: state.tries,
       timeRemaining: state.timeRemaining,
       currentTarget: state.currentTarget,
@@ -233,6 +267,9 @@ const Game = (() => {
     const next = forcedNext || pickNextTerm(state.round, state.usedTerms);
     state.usedTerms.add(next.term);
     const isFirstRound = state.currentTarget === null;
+    const level = levelFor(state.round).level;
+    const levelUp = !isFirstRound && level > state.level;
+    state.level = level;
     state.currentTarget = next;
     state.currentMainWord = next.first;
     state.tries = MAX_TRIES;
@@ -243,6 +280,8 @@ const Game = (() => {
     emit("round", {
       term: next,
       showNewChainMessage: !!next.newChain && !isFirstRound,
+      level,
+      levelUp,
       state: getPublicState(),
     });
   }
@@ -263,7 +302,7 @@ const Game = (() => {
     // game this session), so a new game doesn't just start somewhere random.
     // Falls back to the normal random opener if there's no prior word yet,
     // or that word happens to be a dead end with no unused continuation.
-    const resumeTerm = lastAnsweredWord ? findContinuation(lastAnsweredWord, state.usedTerms) : null;
+    const resumeTerm = lastAnsweredWord ? findContinuation(lastAnsweredWord, state.usedTerms, levelFor(1).maxAnswerLength) : null;
     advanceRound(resumeTerm || undefined);
 
     if (state.currentTarget) {
