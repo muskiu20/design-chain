@@ -751,7 +751,7 @@
   const VOICE_DEBUG_ENABLED = new URLSearchParams(location.search).has("debugvoice");
   // Shown in the copied debug log so a pasted log says which code ran.
   // Keep in sync with CACHE_VERSION in sw.js.
-  const BUILD_VERSION = "v44";
+  const BUILD_VERSION = "v45";
   const VOICE_DEBUG_VISIBLE_LINES = 60; // how many lines the on-screen panel shows at once
   const VOICE_DEBUG_LOG_CAP = 1000; // how many lines "Copy" can pull from — far more than fits on screen
   const voiceDebugStartTime = performance.now(); // single shared clock for every line, regardless of source
@@ -1509,7 +1509,17 @@
   // purely a speech-recognition artifact — typed input never has this
   // problem and shouldn't need the same cleanup.
   function sanitizeVoiceTranscript(s) {
-    return (s || "").replace(/[^\w\s-]/g, "").trim();
+    // Vosk's grammar explicitly lists "[unk]" as a catch-all token for
+    // speech that doesn't match any word in it (see buildGrammar() in
+    // voice-vosk.js) — it's a placeholder meaning "something was said
+    // here, but not a recognized word," never an actual answer. Dropped
+    // before anything else sees it, or it reads literally as "UNK" in the
+    // letter slots and gets treated like a real (wrong) guess. Removed
+    // (not just its brackets) so what's left behaves exactly like silence:
+    // the existing empty-transcript guards below and in the callers
+    // already ignore that correctly.
+    const withoutUnk = (s || "").replace(/\[unk\]/gi, " ");
+    return withoutUnk.replace(/[^\w\s-]/g, "").trim();
   }
 
   // buildSlots() expects its guess argument to line up letter-for-letter
