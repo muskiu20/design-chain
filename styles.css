@@ -570,36 +570,100 @@ button {
 /* Small, non-blocking indicator while the face-tracking model downloads in
    the background (Phase 4) — gameplay and the camera view are never gated
    on this, so it's deliberately a quiet corner note, not a loading screen. */
+/* left/top are set in JS (positionArHint() in ui.js), tracking the card's
+   own on-screen position every frame — not a fixed screen position, which
+   previously put this right around the player's mouth/chin regardless of
+   where the card (and face) actually were. translate: -50% -100% anchors
+   the bubble's bottom-center tip at (left, top), i.e. just above the card.
+   Kept as the standalone `translate`/`scale` properties (not `transform`)
+   so the pop-in animation below can animate `scale` alone without
+   fighting this positioning — same technique already used for the
+   wrong-answer shake on the AR-tracked card. */
 .ar-hint {
-  position: absolute;
-  bottom: 26%;
-  left: 50%;
-  transform: translateX(-50%);
+  /* fixed, not absolute: positionArHint() in ui.js assigns viewport-space
+     coordinates from getBoundingClientRect() straight to left/top, the
+     same way #word-card.ar-tracked already does above. With `absolute`
+     those coordinates would instead be relative to the nearest positioned
+     ancestor (#ar-layer) — invisible on a real phone (where .screen fills
+     the viewport so that ancestor starts at the same origin anyway), but
+     wrong the moment it doesn't, e.g. the centered phone-width column on
+     a wider screen used for testing. */
+  position: fixed;
+  left: 0;
+  top: 0;
+  translate: -50% -100%;
+  scale: 1;
   width: max-content;
   max-width: calc(100% - 32px);
   margin: 0;
-  padding: 0.65em 1em;
+  padding: 0.65em 1em 0.65em 2.3em;
   border-radius: var(--radius-md);
   background: var(--surface);
+  border: 1.5px solid var(--warning);
   color: var(--text-primary);
   font-size: 0.95rem;
   line-height: 1.4;
   text-align: center;
   box-shadow: var(--shadow-md);
-  animation: ar-hint-in 0.25s ease;
+  animation: ar-hint-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Uses the standalone translate property, not transform: the caption is
-   centered with transform: translateX(-50%), which a transform animation
-   would replace for its duration (the caption would jump). */
-@keyframes ar-hint-in {
+/* The same "i" glyph as the typing-mode hint button, so this reads as the
+   same kind of hint rather than a generic status note. */
+.ar-hint::before {
+  content: "i";
+  position: absolute;
+  left: 0.65em;
+  top: 50%;
+  translate: 0 -50%;
+  width: 1.3em;
+  height: 1.3em;
+  border-radius: 50%;
+  background: var(--warning);
+  color: var(--surface);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hidden when the HUD clamp (positionArHint() in ui.js) has pushed the
+   bubble down near/into the card instead of clear above it — the pointer
+   would otherwise touch the card's middle rather than its top edge. */
+.ar-hint--clamped::after {
+  display: none;
+}
+
+/* A small pointer touching the card below, so the bubble visually reads
+   as coming FROM the card rather than floating unrelated nearby. */
+.ar-hint::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  background: var(--surface);
+  border-right: 1.5px solid var(--warning);
+  border-bottom: 1.5px solid var(--warning);
+  translate: -50% 0;
+  rotate: 45deg;
+}
+
+@keyframes ar-hint-pop {
   from {
     opacity: 0;
-    translate: 0 8px;
+    scale: 0.7;
+  }
+  60% {
+    opacity: 1;
+    scale: 1.06;
   }
   to {
     opacity: 1;
-    translate: 0 0;
+    scale: 1;
   }
 }
 

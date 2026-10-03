@@ -406,11 +406,44 @@
   let hintThresholdSeconds = 0; // set per round from the round's own starting time
   let arHintShown = false;
 
+  // Anchors the hint just above the card's current on-screen position
+  // (tracked every frame in arRenderLoop() while shown, since the card
+  // keeps moving with the face) instead of a fixed screen position —
+  // previously bottom: 26% of the screen, which in typical selfie framing
+  // landed right around the player's mouth/chin, nowhere near the card it
+  // was actually about. Clamped so it can never cover the HUD even if the
+  // card is tracking high in frame with little room above it.
+  function positionArHint() {
+    const cardRect = el.wordCard.getBoundingClientRect();
+    const frame = el.gameScreen.getBoundingClientRect();
+    const hudRect = el.hud.getBoundingClientRect();
+    const margin = 12;
+    const gapAboveCard = 14;
+    const hintHeightAllowance = 56; // enough room for a typical one-to-two-line hint, so the clamp doesn't itself get covered
+
+    const centerX = cardRect.left + cardRect.width / 2;
+    const clampedX = Math.min(frame.right - margin, Math.max(frame.left + margin, centerX));
+
+    const desiredBottom = cardRect.top - gapAboveCard;
+    const minBottom = hudRect.bottom + margin + hintHeightAllowance;
+    const clampedBottom = Math.max(desiredBottom, minBottom);
+
+    el.arHint.style.left = `${clampedX}px`;
+    el.arHint.style.top = `${clampedBottom}px`;
+    // When the HUD clamp pushes the hint down, it can end up slightly
+    // overlapping the card instead of sitting just above it — the pointer
+    // would then touch the middle of the card rather than its top edge,
+    // which reads as a glitch rather than "pointing at the card." Hidden
+    // in exactly that case; the bubble itself still shows either way.
+    el.arHint.classList.toggle("ar-hint--clamped", desiredBottom < minBottom);
+  }
+
   function showArHint() {
     if (arHintShown || !activeTerm) return;
     arHintShown = true;
     Game.useHint();
     el.arHint.textContent = hintTextFor(activeTerm);
+    positionArHint(); // before un-hiding, so it never flashes at the wrong spot for a frame
     el.arHint.classList.remove("hidden");
     announce("Hint: " + hintTextFor(activeTerm));
   }
@@ -751,7 +784,7 @@
   const VOICE_DEBUG_ENABLED = new URLSearchParams(location.search).has("debugvoice");
   // Shown in the copied debug log so a pasted log says which code ran.
   // Keep in sync with CACHE_VERSION in sw.js.
-  const BUILD_VERSION = "v45";
+  const BUILD_VERSION = "v46";
   const VOICE_DEBUG_VISIBLE_LINES = 60; // how many lines the on-screen panel shows at once
   const VOICE_DEBUG_LOG_CAP = 1000; // how many lines "Copy" can pull from — far more than fits on screen
   const voiceDebugStartTime = performance.now(); // single shared clock for every line, regardless of source
@@ -1188,6 +1221,7 @@
         cardCurrent.scale += (faceTarget.scale - cardCurrent.scale) * LERP_FACTOR;
       }
       applyCardPosition(cardCurrent);
+      if (arHintShown) positionArHint(); // keeps the hint glued above the card as it tracks the face
     }
 
     el.wordCard.classList.toggle("faded", !faceCurrentlyVisible);
