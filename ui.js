@@ -12,7 +12,6 @@
   const GAMEOVER_DELAY_MS = 900;
   const CHAIN_TOAST_MS = 1200;
   const LEVEL_TOAST_MS = 2400; // a level-up notice stays a little longer than "New chain!"
-  const HINT_REVEAL_SECONDS = 15;
 
   const TIMER_RADIUS = 26;
   const TIMER_CIRCUMFERENCE = 2 * Math.PI * TIMER_RADIUS;
@@ -236,12 +235,18 @@
 
   // ---------- Word card ----------
   // ---------- Letter reveal ----------
-  // With LETTER_REVEAL_SECONDS left, one letter of the answer is shown in
-  // its slot, for the rest of the round. It's deliberately a *random* later
-  // letter: never the first (already shown) and never the very next one,
-  // which would just hand over the obvious start of the word. Answers of
-  // one or two letters have nothing to reveal. Scoring is unchanged.
-  const LETTER_REVEAL_SECONDS = 8;
+  // With the last LETTER_REVEAL_FRACTION of the round left, one letter of
+  // the answer is shown in its slot, for the rest of the round. It's
+  // deliberately a *random* later letter: never the first (already shown)
+  // and never the very next one, which would just hand over the obvious
+  // start of the word. Answers of one or two letters have nothing to
+  // reveal. Scoring is unchanged.
+  //
+  // A fraction of the round's own starting time, not a flat second count —
+  // see HINT_REVEAL_FRACTION's comment below for why a round-relative
+  // threshold matters once rounds can start shorter than a full 30s.
+  const LETTER_REVEAL_FRACTION = 8 / Game.SETTINGS.TIMER_SECONDS; // last ~27% of a full-length round
+  let letterThresholdSeconds = 0; // set per round from the round's own starting time
   let revealedSlot = null; // index of the revealed slot this round, or null
   let revealJustHappened = false; // lets that slot pop once when it appears
   let currentSlotText = ""; // what the slots were last built with, to rebuild after a reveal
@@ -378,25 +383,27 @@
   }
 
   // In camera mode the answer is spoken, so there's nothing to tap: once
-  // HINT_REVEAL_SECONDS remain, the hint is shown automatically in a
-  // caption (#ar-hint). It counts as using the hint, exactly like tapping
-  // the "i" does (the next round gets this round's leftover time + the
-  // bonus instead of a fresh full timer). Typing mode is unchanged.
+  // the last HINT_REVEAL_FRACTION of the round remain, the hint is shown
+  // automatically in a caption (#ar-hint). It counts as using the hint,
+  // exactly like tapping the "i" does (the next round gets this round's
+  // leftover time + the bonus instead of a fresh full timer). Typing mode
+  // is unchanged.
   //
-  // hintWindowArmed guards against a compounding bug: a round that starts
-  // AT or BELOW HINT_REVEAL_SECONDS (which the hint-bonus formula above can
-  // produce — e.g. the hint was used with only a few seconds left) would
-  // otherwise satisfy "timeRemaining <= HINT_REVEAL_SECONDS" on literally
-  // its first tick, auto-showing the hint again immediately. That round
-  // counts as hint-used too, so the round after it gets the same short
-  // bonus timer, which triggers the same instant hint again — once the
-  // hint fires once, every later round keeps re-arming the bonus timer and
-  // the hint never again waits for the last 15 seconds. Only arming the
-  // trigger for rounds that actually started with more time than the
-  // threshold breaks that loop: a round that starts inside the threshold
-  // simply doesn't offer the (redundant) hint, so it never sets hintUsed,
-  // and the round after it gets a fresh full timer again.
-  let hintWindowArmed = false;
+  // This is a FRACTION of the round's own starting time, not a flat
+  // second count, and hintThresholdSeconds (set per round below) is that
+  // fraction applied to THIS round's actual duration — because rounds
+  // don't all start at the same length. The hint-bonus formula above can
+  // start a round well under 30s (e.g. the hint was used with only a few
+  // seconds left, so the next round starts at leftover + the bonus). A
+  // flat "last 15 seconds" threshold would then cover most or all of a
+  // short round instead of just its tail — and after the hint fires once,
+  // every later round would keep inheriting a short start and re-arming
+  // the same near-instant threshold, so the hint would never again wait
+  // for anything resembling "running low." Scaling the threshold to each
+  // round's own length keeps the same proportion of "normal play, then a
+  // hint" regardless of how long the round actually started with.
+  const HINT_REVEAL_FRACTION = 15 / Game.SETTINGS.TIMER_SECONDS; // last half of a full-length round
+  let hintThresholdSeconds = 0; // set per round from the round's own starting time
   let arHintShown = false;
 
   function showArHint() {
@@ -744,7 +751,7 @@
   const VOICE_DEBUG_ENABLED = new URLSearchParams(location.search).has("debugvoice");
   // Shown in the copied debug log so a pasted log says which code ran.
   // Keep in sync with CACHE_VERSION in sw.js.
-  const BUILD_VERSION = "v42";
+  const BUILD_VERSION = "v43";
   const VOICE_DEBUG_VISIBLE_LINES = 60; // how many lines the on-screen panel shows at once
   const VOICE_DEBUG_LOG_CAP = 1000; // how many lines "Copy" can pull from — far more than fits on screen
   const voiceDebugStartTime = performance.now(); // single shared clock for every line, regardless of source
@@ -1808,15 +1815,17 @@
     renderRound(payload.term, payload.showNewChainMessage, payload.levelUp, payload.level);
     updateHud(payload.state);
     setTimerRing(payload.state.timeRemaining);
-    // See hintWindowArmed's comment above: only a round that starts with
-    // more time than the hint threshold can ever trigger the auto-hint.
-    hintWindowArmed = payload.state.timeRemaining > HINT_REVEAL_SECONDS;
+    // Both reveal thresholds are a fraction of THIS round's own starting
+    // time, not a flat second count — see HINT_REVEAL_FRACTION's comment.
+    const roundStartSeconds = payload.state.timeRemaining;
+    hintThresholdSeconds = roundStartSeconds * HINT_REVEAL_FRACTION;
+    letterThresholdSeconds = roundStartSeconds * LETTER_REVEAL_FRACTION;
   });
 
   Game.on("tick", (payload) => {
     setTimerRing(payload.timeRemaining);
-    if (payload.timeRemaining <= LETTER_REVEAL_SECONDS) maybeRevealLetter();
-    if (hintWindowArmed && payload.timeRemaining <= HINT_REVEAL_SECONDS) {
+    if (payload.timeRemaining <= letterThresholdSeconds) maybeRevealLetter();
+    if (payload.timeRemaining <= hintThresholdSeconds) {
       if (arModeActive) showArHint();
       else el.hintBtn.classList.remove("hidden");
     }
